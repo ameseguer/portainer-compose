@@ -1,0 +1,68 @@
+version: '3.7'
+services:
+    openldap:
+        image: osixia/openldap
+        volumes:
+          - ldap_conf:/etc/ldap/slapd.d
+          - ldap_data:/var/lib/ldap
+        environment:
+            LDAP_ORGANISATION: 'Akamai Technologies Inc.'
+            LDAP_DOMAIN: '${LDAP_DOMAIN}'
+            LDAP_ADMIN_PASSWORD: '${LDAP_ADMIN_PASSWORD}'
+        networks:
+          - ldap
+        deploy:
+          mode: replicated
+          replicas: 1
+          update_config:
+            parallelism: 1
+            delay: 10s
+          restart_policy:
+            condition: on-failure
+    phpldapadmin:
+        image: osixia/phpldapadmin
+        environment:
+          PHPLDAPADMIN_LDAP_HOSTS: 'openldap'
+          PHPLDAPADMIN_TRUST_PROXY_SSL: 'true'
+          PHPLDAPADMIN_HTTPS: 'false'
+        networks:
+          - admin
+          - ldap
+        deploy:
+          mode: replicated
+          replicas: 1
+          update_config:
+            parallelism: 1
+            delay: 10s
+          restart_policy:
+            condition: on-failure
+          labels:
+            - "traefik.enable=true"
+            - "traefik.docker.network=admin"
+            - "traefik.http.services.ldap-phpldapadmin.loadbalancer.server.port=80"
+            #HTTP
+            - "traefik.http.routers.phpldapadmin-web.entrypoints=web"
+            - "traefik.http.routers.phpldapadmin-web.rule=Host(`ldap.${DOMAIN_ADMIN}`)"
+            # HTTP ->HTTPS
+            - "traefik.http.middlewares.phpldapadmin-redirect-websecure.redirectscheme.scheme=https"
+            - "traefik.http.middlewares.phpldapadmin-redirect-websecure.redirectscheme.permanent=true"
+            - "traefik.http.routers.phpldapadmin-web.middlewares=phpldapadmin-redirect-websecure"
+            #HTTPS
+            - "traefik.http.routers.phpldapadmin-websecure.entrypoints=websecure"
+            - "traefik.http.routers.phpldapadmin-websecure.tls=true"
+            - "traefik.http.routers.phpldapadmin-websecure.tls.certresolver=letsencrypt"
+            - "traefik.http.routers.phpldapadmin-websecure.rule=Host(`ldap.${DOMAIN_ADMIN}`)"
+            #OAUTH
+            - "traefik.http.routers.phpldapadmin-websecure.middlewares=oauth-admin"
+networks:
+  admin:
+    external: true
+  ldap:
+    external: true
+volumes:
+  ldap_conf:
+    driver: glusterfs
+    name: "gfs/ldap_conf"
+  ldap_data:
+    driver: glusterfs
+    name: "gfs/ldap_data"

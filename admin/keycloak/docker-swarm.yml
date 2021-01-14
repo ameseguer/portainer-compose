@@ -1,0 +1,59 @@
+version: '3.7'
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:11.0.0
+    #command: -Dkeycloak.profile.feature.upload_scripts=enabled
+    networks:
+      - admin
+      - ldap
+      - mysqldb
+    volumes:
+      - keycloak:/opt/jboss/keycloak/
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure 
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=admin"
+        - "traefik.http.services.keycloak-keycloak.loadbalancer.server.port=8080"
+        #HTTP
+        - "traefik.http.routers.keycloak-web.entrypoints=web"
+        - "traefik.http.routers.keycloak-web.rule=Host(`idp.${DOMAIN_ADMIN}`)"
+        # HTTP ->HTTPS
+        - "traefik.http.middlewares.keycloak-redirect-websecure.redirectscheme.scheme=https"
+        - "traefik.http.middlewares.keycloak-redirect-websecure.redirectscheme.permanent=true"
+        - "traefik.http.routers.keycloak-web.middlewares=keycloak-redirect-websecure"
+        #HTTPS
+        - "traefik.http.routers.keycloak-websecure.entrypoints=websecure"
+        - "traefik.http.routers.keycloak-websecure.tls=true"
+        - "traefik.http.routers.keycloak-websecure.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.keycloak-websecure.rule=Host(`idp.${DOMAIN_ADMIN}`)"
+    environment:
+      #Use the first time only
+      KEYCLOAK_USER: '${KEYCLOAK_USER}'
+      KEYCLOAK_PASSWORD: '${KEYCLOAK_PASSWORD}'
+      DB_VENDOR: 'mysql'
+      DB_ADDR: 'mysqldb'
+      DB_DATABASE: 'keycloak'
+      DB_PORT:  3306
+      DB_USER: 'keycloak'
+      DB_PASSWORD: '${KC_MYSQL_PWD}'
+      PROXY_ADDRESS_FORWARDING: 'true'
+      KEYCLOAK_STATISTICS: 'all'
+      JAVA_OPTS: "-Dkeycloak.profile.feature.scripts=enabled -Dkeycloak.profile.feature.upload_scripts=enabled"
+networks:
+  admin:
+    external: true
+  ldap:
+    external: true
+  mysqldb:
+    external: true
+volumes:
+  keycloak:
+    driver: glusterfs
+    name: "gfs/keycloak"

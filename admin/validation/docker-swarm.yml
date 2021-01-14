@@ -1,0 +1,42 @@
+version: '3.3'
+services:
+   validation:
+      image: ameseguer/validation
+      networks:
+        - admin
+        - mysqldb
+      configs:
+        - source: validation_env
+          target: /usr/src/app/.env
+      deploy:
+        mode: replicated
+        replicas: 1
+        update_config:
+          parallelism: 1
+          delay: 10s
+        restart_policy:
+          condition: on-failure
+        labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=admin"
+        - "traefik.http.services.validation-validation.loadbalancer.server.port=5000"
+        #HTTP
+        - "traefik.http.routers.validation-web.entrypoints=web"
+        - "traefik.http.routers.validation-web.rule=Host(`validation.${DOMAIN_ADMIN}`)"
+        # HTTP ->HTTPS
+        - "traefik.http.middlewares.validation-redirect-websecure.redirectscheme.scheme=https"
+        - "traefik.http.middlewares.validation-redirect-websecure.redirectscheme.permanent=true"
+        - "traefik.http.routers.validation-web.middlewares=validation-redirect-websecure"
+        #HTTPS
+        - "traefik.http.routers.validation-websecure.entrypoints=websecure"
+        - "traefik.http.routers.validation-websecure.tls=true"
+        - "traefik.http.routers.validation-websecure.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.validation-websecure.rule=Host(`validation.${DOMAIN_ADMIN}`)"
+networks:
+  admin:
+    external: true
+  mysqldb:
+    external: true
+configs:
+  validation_env:
+    external: true

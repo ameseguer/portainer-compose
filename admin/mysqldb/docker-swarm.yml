@@ -1,0 +1,65 @@
+version: '3.7'
+services:
+  mysqldb:
+    container_name: mysqldb
+    image: mysql:8
+    networks:
+      - mysqldb
+    volumes:
+      - mysqldb_data:/var/lib/mysql
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+    environment:
+       MYSQL_ROOT_PASSWORD: '${MYSQL_ROOT_PASSWORD}'
+  phpmyadmin:
+    image: phpmyadmin:5.0.4
+    networks:
+      - admin
+      - mysqldb
+    environment:
+      PMA_ARBITRARY: 1
+      PMA_HOST: 'mysqldb'
+      PMA_USER: 'root'
+      PMA_PASSWORD: '${MYSQL_ROOT_PASSWORD}'
+      PMA_ABSOLUTE_URI: 'https://phpmyadmin.${DOMAINNAME}/'
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+          condition: on-failure
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=admin"
+        - "traefik.http.services.mysqldb-phpmyadmin.loadbalancer.server.port=80"
+        #HTTP
+        - "traefik.http.routers.phpmyadmin-web.entrypoints=web"
+        - "traefik.http.routers.phpmyadmin-web.rule=Host(`phpmyadmin.${DOMAIN_ADMIN}`)"
+        # HTTP ->HTTPS
+        - "traefik.http.middlewares.phpmyadmin-redirect-websecure.redirectscheme.scheme=https"
+        - "traefik.http.middlewares.phpmyadmin-redirect-websecure.redirectscheme.permanent=true"
+        - "traefik.http.routers.phpmyadmin-web.middlewares=phpmyadmin-redirect-websecure"
+        #HTTPS
+        - "traefik.http.routers.phpmyadmin-websecure.entrypoints=websecure"
+        - "traefik.http.routers.phpmyadmin-websecure.tls=true"
+        - "traefik.http.routers.phpmyadmin-websecure.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.phpmyadmin-websecure.rule=Host(`phpmyadmin.${DOMAIN_ADMIN}`)"
+        #OAUTH
+        - "traefik.http.routers.phpmyadmin-websecure.middlewares=oauth-admin"
+networks:
+  admin:
+    external: true
+  mysqldb:
+    external: true
+volumes:
+  mysqldb_data:
+    driver: glusterfs
+    name: "gfs/mysqldb_data"

@@ -1,0 +1,141 @@
+version: '3.7'
+
+services:
+  traefik:
+    # The official v2 Traefik docker image
+    image: traefik:v2.3
+    networks:
+      - admin
+      - student
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: none
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.services.traefik-traefik.loadbalancer.server.port=8080"
+        #HTTP
+        - "traefik.http.routers.traefik-web.entrypoints=web"
+        - "traefik.http.routers.traefik-web.rule=Host(`traefik.${DOMAIN_ADMIN}`)"
+        # HTTP ->HTTPS
+        - "traefik.http.middlewares.traefik-redirect-websecure.redirectscheme.scheme=https"
+        - "traefik.http.middlewares.traefik-redirect-websecure.redirectscheme.permanent=true"
+        - "traefik.http.routers.traefik-web.middlewares=traefik-redirect-websecure"
+        #HTTPS
+        - "traefik.http.routers.traefik-websecure.entrypoints=websecure"
+        - "traefik.http.routers.traefik-websecure.tls=true"
+        - "traefik.http.routers.traefik-websecure.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.traefik-websecure.rule=Host(`traefik.${DOMAIN_ADMIN}`)"
+        - "traefik.http.routers.traefik-websecure.middlewares=oauth-admin"
+        #Wilcard Certs
+        - "traefik.http.routers.wildcard-certs.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.wildcard-certs.tls.domains[0].main=${DOMAIN_ADMIN}"
+        - "traefik.http.routers.wildcard-certs.tls.domains[0].sans=*.${DOMAIN_ADMIN}"
+        - "traefik.http.routers.wildcard-certs.tls.domains[1].main=my-juiceshop.com"
+        - "traefik.http.routers.wildcard-certs.tls.domains[1].sans=*.my-juiceshop.com"
+        - "traefik.http.routers.wildcard-certs.tls.domains[2].main=akaorigin.com"
+        - "traefik.http.routers.wildcard-certs.tls.domains[2].sans=*.akaorigin.com"
+        - "traefik.http.routers.wildcard-certs.tls.domains[2].sans=*.filtered.akaorigin.com"
+        - "traefik.http.routers.wildcard-certs.tls.domains[2].sans=*.ksdexam.akaorigin.com"
+        #Oauth Admin
+        - "traefik.http.middlewares.oauth-admin-verify.forwardAuth.address=http://admin-oauth:4180/oauth2/auth"
+        - "traefik.http.middlewares.oauth-admin-verify.forwardAuth.trustForwardHeader=true"
+        - "traefik.http.middlewares.oauth-admin-verify.forwardAuth.authResponseHeaders=X-Auth-Request-User,X-Auth-Request-Email,Set-Cookie"
+        - "traefik.http.middlewares.oauth-admin-signin.errors.service=oauth2-admin-oauth@docker"
+        - "traefik.http.middlewares.oauth-admin-signin.errors.status=401"
+        - "traefik.http.middlewares.oauth-admin-signin.errors.query=/oauth2/sign_in"
+        - "traefik.http.middlewares.oauth-admin.chain.middlewares=oauth-admin-signin,oauth-admin-verify"
+        #KSD SiteShield
+        - "traefik.http.middlewares.ksd-siteshield.ipwhitelist.sourcerange=209.170.113.98/31,209.170.113.100/31,209.170.113.106/31,209.170.113.108/32,204.2.166.173/32,204.2.166.174/31,204.2.166.176/30,204.2.166.180/32,209.8.112.100/30,209.8.112.104/31,208.49.157.49/32,208.49.157.50/31,208.49.157.52/31,208.49.157.54/32,184.84.242.21/32,184.84.242.22/31,63.151.118.0/24,67.220.142.19/32,67.220.142.20/32,67.220.142.21/32,67.220.142.22/32,66.198.8.141/32,66.198.8.142/32,66.198.8.143/32,66.198.8.144/32,209.8.112.96/30,184.84.242.32/30,23.48.168.0/22,23.50.48.0/20,67.220.142.19/32,67.220.142.20/32,67.220.142.21/32,67.220.142.22/32,66.198.8.141/32,66.198.8.142/32,66.198.8.143/32,66.198.8.144/32,23.48.168.0/22,23.50.48.0/20,2600:14a0::/40,2600:14a0::/40,188.40.15.155/32"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+    ports:
+      # The HTTP port
+      - "80:80"
+      - "443:443"
+      - "4433:4433"
+      - "8088:8088"
+    volumes:
+      # So that Traefik can listen to the Docker events
+      - /var/run/docker.sock:/var/run/docker.sock
+      - traefik:/data
+    command:
+      - --api.insecure=true
+      - --providers.docker.swarmMode=true
+      - --providers.docker.endpoint=unix:///var/run/docker.sock
+      - --providers.docker.network=student
+      - --providers.docker.watch=true
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web-filtered.address=:8088
+      - --entrypoints.web-filtered.proxyProtocol.trustedIPs=95.217.169.111/32,23.0.0.0/8,209.170.113.98/31,209.170.113.100/31,209.170.113.106/31,209.170.113.108/32,204.2.166.173/32,204.2.166.174/31,204.2.166.176/30,204.2.166.180/32,209.8.112.100/30,209.8.112.104/31,208.49.157.49/32,208.49.157.50/31,208.49.157.52/31,208.49.157.54/32,184.84.242.21/32,184.84.242.22/31,63.151.118.0/24,67.220.142.19/32,67.220.142.20/32,67.220.142.21/32,67.220.142.22/32,66.198.8.141/32,66.198.8.142/32,66.198.8.143/32,66.198.8.144/32,209.8.112.96/30,184.84.242.32/30,23.48.168.0/22,23.50.48.0/20,67.220.142.19/32,67.220.142.20/32,67.220.142.21/32,67.220.142.22/32,66.198.8.141/32,66.198.8.142/32,66.198.8.143/32,66.198.8.144/32,23.48.168.0/22,23.50.48.0/20,2600:14a0::/40,2600:14a0::/40,188.40.15.155/32
+      - --entrypoints.web-filtered.proxyProtocol.insecure
+      - --entrypoints.websecure-filtered.address=:4433
+      - --entrypoints.websecure-filtered.proxyProtocol.trustedIPs=95.217.169.111/32,23.0.0.0/8,209.170.113.98/31,209.170.113.100/31,209.170.113.106/31,209.170.113.108/32,204.2.166.173/32,204.2.166.174/31,204.2.166.176/30,204.2.166.180/32,209.8.112.100/30,209.8.112.104/31,208.49.157.49/32,208.49.157.50/31,208.49.157.52/31,208.49.157.54/32,184.84.242.21/32,184.84.242.22/31,63.151.118.0/24,67.220.142.19/32,67.220.142.20/32,67.220.142.21/32,67.220.142.22/32,66.198.8.141/32,66.198.8.142/32,66.198.8.143/32,66.198.8.144/32,209.8.112.96/30,184.84.242.32/30,23.48.168.0/22,23.50.48.0/20,67.220.142.19/32,67.220.142.20/32,67.220.142.21/32,67.220.142.22/32,66.198.8.141/32,66.198.8.142/32,66.198.8.143/32,66.198.8.144/32,23.48.168.0/22,23.50.48.0/20,2600:14a0::/40,2600:14a0::/40,188.40.15.155/32
+      - --entrypoints.websecure-filtered.proxyProtocol.insecure
+      - --certificatesresolvers.letsencrypt.acme.email=${EMAIL:-chlouis@akamai.com}
+      - --certificatesresolvers.letsencrypt.acme.storage=/data/certs/acme.json
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge=true
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge.provider=route53
+      - --log.level=INFO
+      - --log.filePath=/data/logs/traefik.log
+      - --log.format=json
+      - --api.dashboard
+      - --providers.docker.exposedByDefault=false
+      - --providers.docker.network=student
+  whoami:
+    # A container that exposes an API to show its IP address
+    image: traefik/whoami
+    networks:
+      - student
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: none
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.services.traefik-whoami.loadbalancer.server.port=80"
+        #HTTP
+        - "traefik.http.routers.whoami-web.entrypoints=web"
+        - "traefik.http.routers.whoami-web.rule=Host(`whoami.${DOMAIN_ADMIN}`)"
+        # HTTP ->HTTPS
+        - "traefik.http.middlewares.whoami-redirect-websecure.redirectscheme.scheme=https"
+        - "traefik.http.middlewares.whoami-redirect-websecure.redirectscheme.permanent=true"
+        - "traefik.http.routers.whoami-web.middlewares=whoami-redirect-websecure"
+        #HTTPS
+        - "traefik.http.routers.whoami-websecure.entrypoints=websecure"
+        - "traefik.http.routers.whoami-websecure.tls=true"
+        - "traefik.http.routers.whoami-websecure.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.whoami-websecure.rule=Host(`whoami.${DOMAIN_ADMIN}`)"
+        #OAUTH
+        - "traefik.http.routers.whoami-websecure.middlewares=oauth-admin"
+        #SiteShield
+        - "traefik.http.routers.whoami-filtered-websecure.entrypoints=websecure-filtered"
+        - "traefik.http.routers.whoami-filtered-websecure.tls=true"
+        - "traefik.http.routers.whoami-filtered-websecure.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.whoami-filtered-websecure.rule=Host(`whoami.filtered.akaorigin.com`)"
+        - "traefik.http.routers.whoami-filtered-websecure.middlewares=ksd-siteshield"
+        - "traefik.http.routers.whoami-filtered-web.entrypoints=web-filtered"
+        - "traefik.http.routers.whoami-filtered-web.rule=Host(`whoami.filtered.akaorigin.com`)"
+        - "traefik.http.routers.whoami-filtered-web.middlewares=ksd-siteshield"
+volumes:
+  traefik:
+    driver: glusterfs
+    name: "gfs/traefik"
+networks:
+  admin:
+    external: true
+  student:
+    external: true

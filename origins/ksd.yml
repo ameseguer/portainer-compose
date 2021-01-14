@@ -1,0 +1,65 @@
+version: '3.7'
+services:
+    opencart:
+        image: ameseguer/opencart
+        environment:
+            MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+            MYSQL_ROOT_PASSWORD: "rootpwd"
+        networks:
+        - student
+        deploy:
+          mode: replicated
+          replicas: 1
+          update_config:
+            parallelism: 1
+            delay: 10s
+          restart_policy:
+            condition: on-failure
+          labels:
+            - "traefik.enable=true"
+            - "traefik.docker.network=student"
+            #HTTP
+            - "traefik.http.services.ksd-exam-${PREFIX}.loadbalancer.server.port=80"
+            - "traefik.http.routers.ksd-exam-${PREFIX}.entrypoints=web"
+            - "traefik.http.routers.ksd-exam-${PREFIX}.rule=Host(`user${PREFIX}ksdexam.akaorigin.com`)||Host(`user${PREFIX}exam.my-juiceshop.com`)"
+            #HTTPS
+            - "traefik.http.routers.ksd-exam-${PREFIX}-websecure.entrypoints=websecure"
+            - "traefik.http.routers.ksd-exam-${PREFIX}-websecure.tls=true"
+            - "traefik.http.routers.ksd-exam-${PREFIX}-websecure.tls.certresolver=letsencrypt"
+            - "traefik.http.routers.ksd-exam-${PREFIX}-websecure.rule=Host(`user${PREFIX}ksdexam.akaorigin.com`)||Host(`user${PREFIX}exam.my-juiceshop.com`)"           
+    juiceshop:
+        image: bkimminich/juice-shop:v11.1.3
+        networks:
+        - student
+        deploy:
+          mode: replicated
+          replicas: 1
+          update_config:
+            parallelism: 1
+            delay: 10s
+          restart_policy:
+            condition: on-failure
+          labels:
+            - "traefik.enable=true"
+            - "traefik.docker.network=student"
+            #HTTP
+            - "traefik.http.services.ksd-${PREFIX}.loadbalancer.server.port=3000"
+            - "traefik.http.routers.ksd-${PREFIX}.entrypoints=web"
+            - "traefik.http.routers.ksd-${PREFIX}.rule=Host(`juiceshop${PREFIX}.akaorigin.com`)||Host(`juiceshop${PREFIX}.my-juiceshop.com`)"
+            #HTTPS
+            - "traefik.http.routers.ksd-${PREFIX}-websecure.entrypoints=websecure"
+            - "traefik.http.routers.ksd-${PREFIX}-websecure.tls=true"
+            - "traefik.http.routers.ksd-${PREFIX}-websecure.tls.certresolver=letsencrypt"
+            - "traefik.http.routers.ksd-${PREFIX}-websecure.rule=Host(`juiceshop${PREFIX}.akaorigin.com`)||Host(`juiceshop${PREFIX}.my-juiceshop.com`)"
+            #SiteShield KSD
+            - "traefik.http.routers.ksd-filtered-${PREFIX}-web.entrypoints=web-filtered"
+            - "traefik.http.routers.ksd-filtered-${PREFIX}-web.rule=Host(`juiceshop${PREFIX}.filtered.akaorigin.com`)||Host(`juiceshop${PREFIX}.akaorigin.com`)||Host(`juiceshop${PREFIX}.my-juiceshop.com`)"
+            - "traefik.http.routers.ksd-filtered-${PREFIX}-web.middlewares=ksd-siteshield"
+            - "traefik.http.routers.ksd-filtered-${PREFIX}-websecure.entrypoints=websecure-filtered"
+            - "traefik.http.routers.ksd-filtered-${PREFIX}-websecure.tls=true"
+            - "traefik.http.routers.ksd-filtered-${PREFIX}-websecure.tls.certresolver=letsencrypt"
+            - "traefik.http.routers.ksd-filtered-${PREFIX}-websecure.rule=Host(`juiceshop${PREFIX}.filtered.akaorigin.com`)||Host(`juiceshop${PREFIX}.akaorigin.com`)||Host(`juiceshop${PREFIX}.my-juiceshop.com`)"
+            - "traefik.http.routers.ksd-filtered-${PREFIX}-websecure.middlewares=ksd-siteshield"
+networks:
+  student:
+    external: true

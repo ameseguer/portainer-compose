@@ -1,0 +1,58 @@
+version: '3.7'
+services:
+  admin-oauth:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v6.1.1
+    command:
+      - --provider=oidc
+      - --client-id=oauth2_admin
+      #- --scope=email #for keycloak provider
+      - --reverse-proxy=true
+      - --http-address=0.0.0.0:4180
+      - --skip-provider-button=true
+      - --cookie-domain=.${DOMAIN_ADMIN}
+      - --cookie-secure=true
+      - --cookie-secret=${COOKIE_SECRET}
+      - --email-domain=*
+      - --pass-basic-auth=false
+      - --pass-access-token=true
+      - --set-authorization-header=true
+      - --pass-authorization-header=true
+      - --whitelist-domain=.${DOMAIN_ADMIN}
+      - --client-secret=${KEYCLOAK_SECRET}
+      - --oidc-issuer-url=https://${KEYCLOAK_HOST}/auth/realms/${KEYCLOAK_REALM}
+      - --login-url=https://${KEYCLOAK_HOST}/auth/realms/${KEYCLOAK_REALM}/protocol/openid-connect/auth
+      - --redeem-url=https://${KEYCLOAK_HOST}/auth/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token
+      - --validate-url=https://${KEYCLOAK_HOST}/auth/realms/${KEYCLOAK_REALM}/protocol/openid-connect/userinfo
+      - --keycloak-group==/admin
+    networks:
+      - admin
+    depends_on:
+      - keycloak
+      - traefik
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=admin"
+        - "traefik.http.services.oauth2-admin-oauth.loadbalancer.server.port=4180"
+        #HTTP
+        - "traefik.http.routers.admin-oauth-web.entrypoints=web"
+        - "traefik.http.routers.admin-oauth-web.rule=Host(`oauth.${DOMAIN_ADMIN}`)"
+        # HTTP ->HTTPS
+        - "traefik.http.middlewares.admin-oauth-redirect-websecure.redirectscheme.scheme=https"
+        - "traefik.http.middlewares.admin-oauth-redirect-websecure.redirectscheme.permanent=true"
+        - "traefik.http.routers.admin-oauth-web.middlewares=admin-oauth-redirect-websecure"
+        #HTTPS
+        - "traefik.http.routers.admin-oauth-websecure.entrypoints=websecure"
+        - "traefik.http.routers.admin-oauth-websecure.tls=true"
+        - "traefik.http.routers.admin-oauth-websecure.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.admin-oauth-websecure.rule=Host(`oauth.${DOMAIN_ADMIN}`)|| PathPrefix(`/oauth2`)"
+networks:
+  admin:
+    external: true
